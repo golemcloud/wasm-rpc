@@ -244,6 +244,10 @@ impl WitValueBuilder {
         self.add(WitNode::ResultValue(Err(None)))
     }
 
+    pub(crate) fn add_handle(&mut self, handle_value: u64) -> NodeIndex {
+        self.add(WitNode::Handle(handle_value))
+    }
+
     pub(crate) fn finish_child(&mut self, child: NodeIndex, target_idx: NodeIndex) {
         match &mut self.nodes[target_idx as usize] {
             WitNode::OptionValue(ref mut result_item) => match result_item {

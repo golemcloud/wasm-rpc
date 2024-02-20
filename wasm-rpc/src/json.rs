@@ -148,6 +148,7 @@ fn validate_function_parameter(
             })
         }
         AnalysedType::Tuple(elems) => get_tuple(input_json, elems).map(Value::Tuple),
+        AnalysedType::Resource { .. } => get_handle(input_json),
     }
 }
 
@@ -557,6 +558,10 @@ fn get_variant(
     }
 }
 
+fn get_handle(value: &JsonValue) -> Result<Value, Vec<String>> {
+    Ok(Value::Handle(get_u64(value)?))
+}
+
 fn validate_function_result(
     val: Value,
     expected_type: &AnalysedType,
@@ -789,6 +794,10 @@ fn validate_function_result(
             },
 
             _ => Err(vec!["Unexpected type; expected a Result type.".to_string()]),
+        },
+        Value::Handle(value) => match expected_type {
+            AnalysedType::Resource { .. } => Ok(serde_json::Value::Number(Number::from(value))),
+            _ => Err(vec!["Unexpected type; expected a Handle type.".to_string()]),
         },
     }
 }
@@ -1235,7 +1244,7 @@ mod tests {
             result,
             Ok(Value::Record(vec![
                 Value::String("a".to_string()),
-                Value::Option(None)
+                Value::Option(None),
             ]))
         );
     }

@@ -94,6 +94,7 @@ pub enum Value {
     Flags(Vec<bool>),
     Option(Option<Box<Value>>),
     Result(Result<Option<Box<Value>>, Option<Box<Value>>>),
+    Handle(u64),
 }
 
 impl From<Value> for WitValue {
@@ -190,6 +191,7 @@ fn build_wit_value(value: Value, builder: &mut WitValueBuilder) -> NodeIndex {
             }
             Err(None) => builder.add_result_err_unit(),
         },
+        Value::Handle(value) => builder.add_handle(value),
     }
 }
 
@@ -267,6 +269,7 @@ fn build_tree(node: &WitNode, nodes: &[WitNode]) -> Value {
         WitNode::PrimChar(value) => Value::Char(*value),
         WitNode::PrimBool(value) => Value::Bool(*value),
         WitNode::PrimString(value) => Value::String(value.clone()),
+        WitNode::Handle(value) => Value::Handle(*value),
     }
 }
 

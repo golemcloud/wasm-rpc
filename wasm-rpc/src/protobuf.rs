@@ -111,6 +111,9 @@ impl From<super::WitNode> for WitNode {
             super::WitNode::PrimString(value) => WitNode {
                 value: Some(wit_node::Value::String(WitPrimStringNode { value })),
             },
+            super::WitNode::Handle(value) => WitNode {
+                value: Some(wit_node::Value::Handle(WitHandleNode { value })),
+            },
         }
     }
 }
@@ -205,6 +208,9 @@ impl TryFrom<WitNode> for super::WitNode {
             }
             Some(wit_node::Value::String(WitPrimStringNode { value })) => {
                 Ok(super::WitNode::PrimString(value))
+            }
+            Some(wit_node::Value::Handle(WitHandleNode { value })) => {
+                Ok(super::WitNode::Handle(value))
             }
         }
     }
@@ -327,6 +333,9 @@ impl From<Value> for Val {
                     value: value.map(|value| Box::new((*value).into())),
                 }))),
             },
+            Value::Handle(value) => Val {
+                val: Some(val::Val::Handle(ValHandle { value })),
+            },
         }
     }
 }
@@ -428,6 +437,7 @@ impl TryFrom<Val> for Value {
                     _ => Err("Protobuf ValResult has invalid discriminant or value".to_string()),
                 }
             }
+            Some(val::Val::Handle(ValHandle { value })) => Ok(Value::Handle(value)),
         }
     }
 }
