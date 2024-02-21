@@ -29,7 +29,7 @@ interface types {
     prim-char(char),
     prim-bool(bool),
     prim-string(string),
-    handle(u64)
+    handle(tuple<uri, u64>)
   }
 
   record uri {

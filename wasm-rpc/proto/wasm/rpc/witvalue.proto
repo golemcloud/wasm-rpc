@@ -120,5 +120,6 @@ message WitPrimStringNode {
 }
 
 message WitHandleNode {
-  uint64 value = 1;
+  string uri = 1;
+  uint64 value = 2;
 }

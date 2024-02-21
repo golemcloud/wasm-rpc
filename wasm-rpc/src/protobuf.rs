@@ -111,8 +111,11 @@ impl From<super::WitNode> for WitNode {
             super::WitNode::PrimString(value) => WitNode {
                 value: Some(wit_node::Value::String(WitPrimStringNode { value })),
             },
-            super::WitNode::Handle(value) => WitNode {
-                value: Some(wit_node::Value::Handle(WitHandleNode { value })),
+            super::WitNode::Handle((uri, value)) => WitNode {
+                value: Some(wit_node::Value::Handle(WitHandleNode {
+                    uri: uri.value,
+                    value,
+                })),
             },
         }
     }
@@ -209,8 +212,8 @@ impl TryFrom<WitNode> for super::WitNode {
             Some(wit_node::Value::String(WitPrimStringNode { value })) => {
                 Ok(super::WitNode::PrimString(value))
             }
-            Some(wit_node::Value::Handle(WitHandleNode { value })) => {
-                Ok(super::WitNode::Handle(value))
+            Some(wit_node::Value::Handle(WitHandleNode { uri, value })) => {
+                Ok(super::WitNode::Handle((super::Uri { value: uri }, value)))
             }
         }
     }
@@ -333,8 +336,11 @@ impl From<Value> for Val {
                     value: value.map(|value| Box::new((*value).into())),
                 }))),
             },
-            Value::Handle(value) => Val {
-                val: Some(val::Val::Handle(ValHandle { value })),
+            Value::Handle { uri, resource_id } => Val {
+                val: Some(val::Val::Handle(ValHandle {
+                    uri: uri.value,
+                    value: resource_id,
+                })),
             },
         }
     }
@@ -437,7 +443,10 @@ impl TryFrom<Val> for Value {
                     _ => Err("Protobuf ValResult has invalid discriminant or value".to_string()),
                 }
             }
-            Some(val::Val::Handle(ValHandle { value })) => Ok(Value::Handle(value)),
+            Some(val::Val::Handle(ValHandle { uri, value })) => Ok(Value::Handle {
+                uri: super::Uri { value: uri },
+                resource_id: value,
+            }),
         }
     }
 }

@@ -64,6 +64,7 @@ interface iface1 {
     checkout: func() -> checkout-result;
     get-cart-contents: func() -> list<product-item>;
     merge-with: func(other-cart: borrow<cart>) -> ();
+    merge: static func(cart1: borrow<cart>, cart2: borrow<cart>) -> cart;
   }
 }
 
