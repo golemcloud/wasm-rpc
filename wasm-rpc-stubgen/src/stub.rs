@@ -365,7 +365,7 @@ fn collect_stub_resources<'a>(
     resolve: &'a Resolve,
 ) -> anyhow::Result<Vec<InterfaceStub>> {
     let mut interfaces = Vec::new();
-    for (name, type_id) in types {
+    for (_name, type_id) in types {
         let typ = resolve
             .types
             .get(*type_id)
