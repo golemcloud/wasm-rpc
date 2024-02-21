@@ -371,8 +371,6 @@ fn collect_stub_resources<'a>(
             .get(*type_id)
             .ok_or(anyhow!("type {type_id:?} not found"))?;
         if typ.kind == TypeDefKind::Resource {
-            println!("*** name: {:?}, {typ:?}", name);
-
             match typ.owner {
                 TypeOwner::World(_) => {}
                 TypeOwner::Interface(iface_id) => {
@@ -396,11 +394,6 @@ fn collect_stub_resources<'a>(
                         .values()
                         .filter(|f| f.kind == FunctionKind::Static(*type_id))
                         .collect::<Vec<_>>();
-
-                    println!(
-                        "*** constructors: {:?}, methods: {:?}, statics: {:?}",
-                        constructors, methods, statics
-                    );
 
                     let functions = collect_stub_functions(methods.into_iter())?
                         .into_iter()
