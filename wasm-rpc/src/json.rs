@@ -14,7 +14,7 @@
 
 use bigdecimal::{BigDecimal, FromPrimitive, ToPrimitive};
 use golem_wasm_ast::analysis::{
-    AnalysedFunctionParameter, AnalysedFunctionResult, AnalysedResourceId, AnalysedResourceMode,
+    AnalysedFunctionParameter, AnalysedFunctionResults, AnalysedResourceId, AnalysedResourceMode,
     AnalysedType,
 };
 use serde_json::{Number, Value as JsonValue};
@@ -85,14 +85,14 @@ pub fn function_parameters_typed(
 
 pub fn function_result(
     values: Vec<Value>,
-    expected_types: &[AnalysedFunctionResult],
+    expected_types: &AnalysedFunctionResults,
 ) -> Result<JsonValue, Vec<String>> {
     function_result_typed(values, expected_types).map(|result| get_json_from_typed_value(&result))
 }
 
 pub fn function_result_typed(
     values: Vec<Value>,
-    expected_types: &[AnalysedFunctionResult],
+    expected_types: &AnalysedFunctionResults,
 ) -> Result<TypeAnnotatedValue, Vec<String>> {
     if values.len() != expected_types.len() {
         Err(vec![format!(
@@ -104,39 +104,46 @@ pub fn function_result_typed(
         let mut results = vec![];
         let mut errors = vec![];
 
-        for (value, expected) in values.into_iter().zip(expected_types.iter()) {
-            let result = TypeAnnotatedValue::from_value(&value, &expected.typ);
+        for (value, expected) in values.into_iter().zip(expected_types.types().into_iter().map(|x| x.clone())) {
+            let result = TypeAnnotatedValue::from_value(&value, &expected);
 
             match result {
                 Ok(value) => {
-                    results.push((value, expected.typ.clone()));
+                    results.push((value, expected));
                 }
                 Err(err) => errors.extend(err),
             }
         }
 
-        let all_without_names = expected_types.iter().all(|t| t.name.is_none());
+        let is_unnamed = match expected_types {
+            AnalysedFunctionResults::Unnamed(_) => true,
+            AnalysedFunctionResults::Unit => true,
+            AnalysedFunctionResults::Named(_) => false,
+        };
 
-        if all_without_names {
+        if is_unnamed {
+            let (values, types): (Vec<_>, Vec<_>) = results.into_iter().unzip();
+
             Ok(TypeAnnotatedValue::Tuple {
-                typ: results.iter().map(|(_, typ)| typ.clone()).collect(),
-                value: results.into_iter().map(|(v, _)| v).collect(),
+                typ: types,
+                value: values,
             })
         } else {
+            let named_function_results = match expected_types {
+                AnalysedFunctionResults::Named(params) => params.iter().cloned().collect(),
+                _ => vec![]
+            };
+
             let mut named_typs: Vec<(String, AnalysedType)> = vec![];
             let mut named_values: Vec<(String, TypeAnnotatedValue)> = vec![];
 
-            for (index, ((typed_value, typ), expected)) in
-                results.into_iter().zip(expected_types.iter()).enumerate()
+            for  ((typed_value, typ), named_function_results) in
+                results.into_iter().zip(named_function_results.into_iter())
             {
-                let name = if let Some(name) = &expected.name {
-                    name.clone()
-                } else {
-                    index.to_string()
-                };
+                let name =  &named_function_results.name;
 
-                named_typs.push((name.clone(), typ.clone()));
-                named_values.push((name, typed_value));
+                named_typs.push((name.clone(), typ));
+                named_values.push((name.clone(), typed_value));
             }
 
             Ok(TypeAnnotatedValue::Record {
