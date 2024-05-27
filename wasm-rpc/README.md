@@ -1,4 +1,4 @@
-# golem-wasm-rpc
+`# golem-wasm-rpc
 
 Defines data types for [Golem](https://golem.cloud)'s remote function invocation and conversions between them.
 
