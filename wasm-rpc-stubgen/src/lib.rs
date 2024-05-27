@@ -23,7 +23,7 @@ use crate::cargo::generate_cargo_toml;
 use crate::compilation::compile;
 use crate::rust::generate_stub_source;
 use crate::stub::StubDefinition;
-use crate::wit::{copy_wit_files, generate_stub_wit, verify_action, WitAction};
+use crate::wit::{copy_wasm_rpc_wit, copy_wit_files, generate_stub_wit, verify_action, WitAction};
 use anyhow::{anyhow, Context};
 use clap::Parser;
 use fs_extra::dir::CopyOptions;
@@ -176,10 +176,11 @@ pub fn generate(args: GenerateArgs) -> anyhow::Result<()> {
     .context("Failed to gather information for the stub generator")?;
 
     generate_stub_wit(&stub_def).context("Failed to generate the stub wit file")?;
-    copy_wit_files(&stub_def).context("Failed to copy the dependent wit files")?;
-    stub_def
-        .verify_target_wits()
-        .context("Failed to resolve the result WIT root")?;
+    copy_wasm_rpc_wit(&stub_def).context("Failed to copy the wasm-rpc wit file")?;
+    //copy_wit_files(&stub_def).context("Failed to copy the dependent wit files")?;
+    // stub_def
+    //     .verify_target_wits()
+    //     .context("Failed to resolve the result WIT root")?;
     generate_cargo_toml(&stub_def).context("Failed to generate the Cargo.toml file")?;
     generate_stub_source(&stub_def).context("Failed to generate the stub Rust source")?;
     Ok(())

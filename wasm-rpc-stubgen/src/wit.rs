@@ -194,7 +194,7 @@ fn write_field_list(
     for (idx, field) in fields.iter().enumerate() {
         write!(
             out,
-            "{}: {}",
+            "    {}: {}",
             field.name,
             field.ty.wit_type_string(&def.resolve)?
         )?;
@@ -202,6 +202,26 @@ fn write_field_list(
             write!(out, ", ")?;
         }
     }
+    Ok(())
+
+}
+
+pub fn copy_wasm_rpc_wit(def: &StubDefinition) -> anyhow::Result<()> {
+    let dest_wit_root = def.target_wit_root();
+    fs::create_dir_all(&dest_wit_root)?;
+
+    let wasm_rpc_root = dest_wit_root.join(Path::new("deps/wasm-rpc"));
+    fs::create_dir_all(&wasm_rpc_root).unwrap();
+
+    println!(
+        "Writing wasm-rpc.wit to {}",
+        wasm_rpc_root.to_string_lossy()
+    );
+    fs::write(
+        wasm_rpc_root.join(Path::new("wasm-rpc.wit")),
+        golem_wasm_rpc::WASM_RPC_WIT,
+    )?;
+
     Ok(())
 
 }
