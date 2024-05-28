@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use std::any::Any;
-use crate::stub::{FunctionParamStub, FunctionResultStub, StubDefinition};
+use crate::stub::{FunctionParamStub, FunctionResultStub, InterfaceStubTypeDef, StubDefinition};
 use anyhow::{anyhow, bail, Context};
 use indexmap::IndexSet;
 use std::fmt::{Display, Formatter, Write};
@@ -36,13 +36,8 @@ pub fn generate_stub_wit(def: &StubDefinition) -> anyhow::Result<()> {
         .flat_map(|i| i.imports.iter())
         .collect::<Vec<_>>();
 
-    let all_types =
-        def.interfaces.iter().flat_map(|i| i.imports.iter()).collect::<Vec<_>>();
-
-
-
     writeln!(out, "  use golem:rpc/types@0.1.0.{{uri}};")?;
-    let mut inline_types = vec![];
+    let mut inline_types: Vec<InterfaceStubTypeDef> = vec![];
 
     for import in all_imports {
         match &import.package_name {
@@ -52,6 +47,7 @@ pub fn generate_stub_wit(def: &StubDefinition) -> anyhow::Result<()> {
             _ =>   writeln!(out, "  use {}.{{{}}};", import.path, import.name)?
         }
     }
+
     writeln!(out)?;
 
     for typ in inline_types {
