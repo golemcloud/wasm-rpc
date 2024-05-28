@@ -17,7 +17,7 @@ use indexmap::IndexSet;
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use wit_parser::{Function, FunctionKind, PackageName, Resolve, Results, Type, TypeDef, TypeDefKind, TypeId, TypeOwner, UnresolvedPackage, World, WorldId, WorldItem};
+use wit_parser::{Function, FunctionKind, Package, PackageId, PackageName, Resolve, Results, Type, TypeDef, TypeDefKind, TypeId, TypeOwner, UnresolvedPackage, World, WorldId, WorldItem};
 
 /// All the gathered information for generating the stub crate.
 pub struct StubDefinition {
@@ -139,6 +139,7 @@ impl InterfaceStub {
 pub struct InterfaceStubTypeDef {
     pub name: String,
     pub path: String,
+    pub package_name: Option<PackageName>,
     pub type_def: TypeDef
 }
 
@@ -250,9 +251,11 @@ fn collect_stub_imports<'a>(
                     let interface_path = package
                         .map(|p| p.name.interface_id(&interface_name))
                         .unwrap_or(interface_name);
+
                     imports.push(InterfaceStubTypeDef {
                         name: name.clone(),
                         path: interface_path,
+                        package_name: package.map(|p| p.name.clone()),
                         type_def: typ.clone(),
                     });
                 }

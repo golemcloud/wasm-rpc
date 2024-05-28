@@ -177,7 +177,7 @@ pub fn generate(args: GenerateArgs) -> anyhow::Result<()> {
 
     generate_stub_wit(&stub_def).context("Failed to generate the stub wit file")?;
     copy_wasm_rpc_wit(&stub_def).context("Failed to copy the wasm-rpc wit file")?;
-    //copy_wit_files(&stub_def).context("Failed to copy the dependent wit files")?;
+    copy_wit_files(&stub_def).context("Failed to copy the dependent wit files")?;
     // stub_def
     //     .verify_target_wits()
     //     .context("Failed to resolve the result WIT root")?;

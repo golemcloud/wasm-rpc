@@ -29,53 +29,64 @@ pub fn generate_stub_wit(def: &StubDefinition) -> anyhow::Result<()> {
     writeln!(out, "package {}-stub;", def.root_package_name)?;
     writeln!(out)?;
     writeln!(out, "interface stub-{} {{", world.name)?;
-    //
-    // let all_imports = def
-    //     .interfaces
-    //     .iter()
-    //     .flat_map(|i| i.imports.iter())
-    //     .collect::<IndexSet<_>>();
-    //
+
+    let all_imports = def
+        .interfaces
+        .iter()
+        .flat_map(|i| i.imports.iter())
+        .collect::<Vec<_>>();
+
     let all_types =
         def.interfaces.iter().flat_map(|i| i.imports.iter()).collect::<Vec<_>>();
 
+
+
     writeln!(out, "  use golem:rpc/types@0.1.0.{{uri}};")?;
-    // for import in all_imports {
-    //     writeln!(out, "  use {}.{{{}}};", import.path, import.name)?;
-    // }
-    writeln!(out)?;
+    let mut inline_types = vec![];
 
-    for typ in all_types {
-        let typ_kind = typ.clone().type_def.kind;
-        let kind_str = typ_kind.as_str();
-        let name = typ.clone().name;
-
-        write!(out, "  {}", kind_str)?;
-        write!(out, " {}", name)?;
-
-        match typ_kind {
-            TypeDefKind::Record(record) => {
-                write!(out, " {{")?;
-                writeln!(out)?;
-                write_field_list(&mut out, record.fields, def)?;
-                writeln!(out)?;
-                writeln!(out, "  }};")?;
+    for import in all_imports {
+        match &import.package_name {
+            Some(package) if package == &def.root_package_name =>{
+                inline_types.push(import.clone());
             }
-            TypeDefKind::Resource => {}
-            TypeDefKind::Handle(_) => {}
-            TypeDefKind::Flags(_) => {}
-            TypeDefKind::Tuple(_) => {}
-            TypeDefKind::Variant(_) => {}
-            TypeDefKind::Enum(_) => {}
-            TypeDefKind::Option(_) => {}
-            TypeDefKind::Result(_) => {}
-            TypeDefKind::List(_) => {}
-            TypeDefKind::Future(_) => {}
-            TypeDefKind::Stream(_) => {}
-            TypeDefKind::Type(_) => {}
-            TypeDefKind::Unknown => {}
+            _ =>   writeln!(out, "  use {}.{{{}}};", import.path, import.name)?
         }
     }
+    writeln!(out)?;
+
+    for typ in inline_types {
+
+                let typ_kind = typ.clone().type_def.kind;
+                let kind_str = typ_kind.as_str();
+                let name = typ.clone().name;
+
+                write!(out, "  {}", kind_str)?;
+                write!(out, " {}", name)?;
+
+                match typ_kind {
+                    TypeDefKind::Record(record) => {
+                        write!(out, " {{")?;
+                        writeln!(out)?;
+                        write_field_list(&mut out, record.fields, def)?;
+                        writeln!(out)?;
+                        writeln!(out, "  }}")?;
+                    }
+                    TypeDefKind::Resource => {}
+                    TypeDefKind::Handle(_) => {}
+                    TypeDefKind::Flags(_) => {}
+                    TypeDefKind::Tuple(_) => {}
+                    TypeDefKind::Variant(_) => {}
+                    TypeDefKind::Enum(_) => {}
+                    TypeDefKind::Option(_) => {}
+                    TypeDefKind::Result(_) => {}
+                    TypeDefKind::List(_) => {}
+                    TypeDefKind::Future(_) => {}
+                    TypeDefKind::Stream(_) => {}
+                    TypeDefKind::Type(_) => {}
+                    TypeDefKind::Unknown => {}
+                }
+
+        }
 
     for interface in &def.interfaces {
         writeln!(out, "  resource {} {{", &interface.name)?;
