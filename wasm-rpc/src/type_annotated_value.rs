@@ -1,512 +1,579 @@
-use std::convert::{TryFrom, TryInto};
-
-use golem_wasm_ast::analysis::{AnalysedResourceId, AnalysedResourceMode, AnalysedType};
+use golem_wasm_ast::analysis::AnalysedType;
 
 use crate::{Uri, Value, WitValue};
 
-use std::ops::Deref;
+use crate::protobuf::typed_result::ResultValue;
+use crate::protobuf::{
+    r#type, PrimitiveType, Type, TypeEnum, TypeFlags, TypeList, TypeOption, TypePrimitive,
+    TypeRecord, TypeResult, TypeTuple, TypedEnum, TypedFlags, TypedHandle, TypedList, TypedRecord,
+    TypedTuple, TypedVariant,
+};
+use crate::protobuf::{NameValuePair, TypedOption};
+use crate::protobuf::{TypeAnnotatedValue as RootTypeAnnotatedValue, TypedResult};
+use crate::type_ext::TypeExt;
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum TypeAnnotatedValue {
-    Bool(bool),
-    S8(i8),
-    U8(u8),
-    S16(i16),
-    U16(u16),
-    S32(i32),
-    U32(u32),
-    S64(i64),
-    U64(u64),
-    F32(f32),
-    F64(f64),
-    Chr(char),
-    Str(String),
-    List {
-        typ: AnalysedType,
-        values: Vec<TypeAnnotatedValue>,
-    },
-    Tuple {
-        typ: Vec<AnalysedType>,
-        value: Vec<TypeAnnotatedValue>,
-    },
-    Record {
-        typ: Vec<(String, AnalysedType)>,
-        value: Vec<(String, TypeAnnotatedValue)>,
-    },
-    Flags {
-        typ: Vec<String>,
-        values: Vec<String>,
-    },
-    Variant {
-        typ: Vec<(String, Option<AnalysedType>)>,
-        case_name: String,
-        case_value: Option<Box<TypeAnnotatedValue>>,
-    },
-    Enum {
-        typ: Vec<String>,
-        value: String,
-    },
-    Option {
-        typ: AnalysedType,
-        value: Option<Box<TypeAnnotatedValue>>,
-    },
-    Result {
-        ok: Option<Box<AnalysedType>>,
-        error: Option<Box<AnalysedType>>,
-        value: Result<Option<Box<TypeAnnotatedValue>>, Option<Box<TypeAnnotatedValue>>>,
-    },
-    Handle {
-        id: AnalysedResourceId,
-        resource_mode: AnalysedResourceMode,
-        uri: Uri,
-        resource_id: u64,
-    },
+pub type TypeAnnotatedValue = crate::protobuf::type_annotated_value::TypeAnnotatedValue;
+
+// To create TypeAnnotatedValue, we need the type-info represented in any forms,
+// as far as it can be converted to `golem_wasm_rpc::protobuf::Type`
+pub fn create<T: TypeExt>(value: &Value, typ: &T) -> Result<TypeAnnotatedValue, Vec<String>> {
+    let tpe = typ.to_type();
+    create_from_type(value, &tpe)
 }
 
-impl TypeAnnotatedValue {
-    pub fn from_value(
-        val: &Value,
-        analysed_type: &AnalysedType,
-    ) -> Result<TypeAnnotatedValue, Vec<String>> {
-        match val {
-            Value::Bool(bool) => Ok(TypeAnnotatedValue::Bool(*bool)),
-            Value::S8(value) => Ok(TypeAnnotatedValue::S8(*value)),
-            Value::U8(value) => Ok(TypeAnnotatedValue::U8(*value)),
-            Value::U32(value) => Ok(TypeAnnotatedValue::U32(*value)),
-            Value::S16(value) => Ok(TypeAnnotatedValue::S16(*value)),
-            Value::U16(value) => Ok(TypeAnnotatedValue::U16(*value)),
-            Value::S32(value) => Ok(TypeAnnotatedValue::S32(*value)),
-            Value::S64(value) => Ok(TypeAnnotatedValue::S64(*value)),
-            Value::U64(value) => Ok(TypeAnnotatedValue::U64(*value)),
-            Value::F32(value) => Ok(TypeAnnotatedValue::F32(*value)),
-            Value::F64(value) => Ok(TypeAnnotatedValue::F64(*value)),
-            Value::Char(value) => Ok(TypeAnnotatedValue::Chr(*value)),
-            Value::String(value) => Ok(TypeAnnotatedValue::Str(value.clone())),
+pub fn create_from_type(val: &Value, typ: &Type) -> Result<TypeAnnotatedValue, Vec<String>> {
+    match val {
+        Value::Bool(bool) => Ok(TypeAnnotatedValue::Bool(*bool)),
+        Value::S8(value) => Ok(TypeAnnotatedValue::S8(*value as i32)),
+        Value::U8(value) => Ok(TypeAnnotatedValue::U8(*value as u32)),
+        Value::U32(value) => Ok(TypeAnnotatedValue::U32(*value)),
+        Value::S16(value) => Ok(TypeAnnotatedValue::S16(*value as i32)),
+        Value::U16(value) => Ok(TypeAnnotatedValue::U16(*value as u32)),
+        Value::S32(value) => Ok(TypeAnnotatedValue::S32(*value)),
+        Value::S64(value) => Ok(TypeAnnotatedValue::S64(*value)),
+        Value::U64(value) => Ok(TypeAnnotatedValue::U64(*value)),
+        Value::F32(value) => Ok(TypeAnnotatedValue::F32(*value)),
+        Value::F64(value) => Ok(TypeAnnotatedValue::F64(*value)),
+        Value::Char(value) => Ok(TypeAnnotatedValue::Char(*value as i32)),
+        Value::String(value) => Ok(TypeAnnotatedValue::Str(value.clone())),
 
-            Value::Enum(value) => match analysed_type {
-                AnalysedType::Enum(names) => match names.get(*value as usize) {
-                    Some(str) => Ok(TypeAnnotatedValue::Enum {
-                        typ: names.clone(),
-                        value: str.to_string(),
-                    }),
-                    None => Err(vec![format!("Invalid enum {}", value)]),
-                },
-                _ => Err(vec![format!("Unexpected enum {}", value)]),
-            },
+        Value::Enum(value) => match &typ.r#type {
+            Some(crate::protobuf::r#type::Type::Enum(typ_enum)) => {
+                match typ_enum.names.get(*value as usize) {
+                    Some(name) => Ok(TypeAnnotatedValue::Enum(TypedEnum {
+                        typ: typ_enum.names.clone(),
+                        value: name.clone(),
+                    })),
+                    None => Err(vec![format!("Invalid enum value {}", value)]),
+                }
+            }
+            _ => Err(vec![format!(
+                "Unexpected type; expected an Enum type for value {}",
+                value
+            )]),
+        },
 
-            Value::Option(value) => match analysed_type {
-                AnalysedType::Option(elem) => Ok(TypeAnnotatedValue::Option {
-                    typ: *elem.clone(),
-                    value: match value {
-                        Some(value) => Some(Box::new(Self::from_value(value, elem)?)),
-                        None => None,
-                    },
-                }),
-
-                _ => Err(vec!["Unexpected type; expected an Option type.".to_string()]),
-            },
-
-            Value::Tuple(values) => match analysed_type {
-                AnalysedType::Tuple(types) => {
-                    if values.len() != types.len() {
-                        return Err(vec![format!(
-                            "Tuple has unexpected number of elements: {} vs {}",
-                            values.len(),
-                            types.len(),
-                        )]);
-                    }
-
-                    let mut errors = vec![];
-                    let mut results = vec![];
-
-                    for (value, tpe) in values.iter().zip(types.iter()) {
-                        match Self::from_value(value, tpe) {
-                            Ok(result) => results.push(result),
-                            Err(errs) => errors.extend(errs),
-                        }
-                    }
-
-                    if errors.is_empty() {
-                        Ok(TypeAnnotatedValue::Tuple {
-                            typ: types.clone(),
-                            value: results,
-                        })
+        Value::Option(value) => match &typ.r#type {
+            Some(crate::protobuf::r#type::Type::Option(typ_option)) => match value {
+                Some(value) => {
+                    if let Some(inner_type) = &typ_option.elem {
+                        let result = create_from_type(value, inner_type)?;
+                        Ok(TypeAnnotatedValue::Option(Box::new(TypedOption {
+                            typ: Some((**inner_type).clone()),
+                            value: Some(Box::new(RootTypeAnnotatedValue {
+                                type_annotated_value: Some(result),
+                            })),
+                        })))
                     } else {
-                        Err(errors)
+                        Err(vec!["Unexpected inner type for Option.".to_string()])
+                    }
+                }
+                None => Ok(TypeAnnotatedValue::Option(Box::new(TypedOption {
+                    typ: typ_option.elem.as_deref().cloned(),
+                    value: None,
+                }))),
+            },
+            _ => Err(vec!["Unexpected type; expected an Option type.".to_string()]),
+        },
+
+        Value::Tuple(values) => match &typ.r#type {
+            Some(crate::protobuf::r#type::Type::Tuple(typ_tuple)) => {
+                if values.len() != typ_tuple.elems.len() {
+                    return Err(vec![format!(
+                        "Tuple has unexpected number of elements: {} vs {}",
+                        values.len(),
+                        typ_tuple.elems.len(),
+                    )]);
+                }
+
+                let mut errors = vec![];
+                let mut results = vec![];
+
+                for (value, tpe) in values.iter().zip(&typ_tuple.elems) {
+                    match create_from_type(value, tpe) {
+                        Ok(result) => results.push(result),
+                        Err(errs) => errors.extend(errs),
                     }
                 }
 
-                _ => Err(vec!["Unexpected type; expected a tuple type.".to_string()]),
-            },
+                if errors.is_empty() {
+                    Ok(TypeAnnotatedValue::Tuple(TypedTuple {
+                        typ: typ_tuple.elems.clone(),
+                        value: results
+                            .into_iter()
+                            .map(|v| RootTypeAnnotatedValue {
+                                type_annotated_value: Some(v),
+                            })
+                            .collect(),
+                    }))
+                } else {
+                    Err(errors)
+                }
+            }
+            _ => Err(vec!["Unexpected type; expected a Tuple type.".to_string()]),
+        },
 
-            Value::List(values) => match analysed_type {
-                AnalysedType::List(elem) => {
+        Value::List(values) => match &typ.r#type {
+            Some(crate::protobuf::r#type::Type::List(typ_list)) => {
+                if let Some(inner_type) = &typ_list.elem {
                     let mut errors = vec![];
                     let mut results = vec![];
 
                     for value in values {
-                        match Self::from_value(value, elem) {
+                        match create_from_type(value, inner_type) {
                             Ok(value) => results.push(value),
                             Err(errs) => errors.extend(errs),
                         }
                     }
 
                     if errors.is_empty() {
-                        Ok(TypeAnnotatedValue::List {
-                            typ: *elem.clone(),
-                            values: results,
-                        })
+                        Ok(TypeAnnotatedValue::List(TypedList {
+                            typ: Some((**inner_type).clone()),
+                            values: results
+                                .into_iter()
+                                .map(|v| RootTypeAnnotatedValue {
+                                    type_annotated_value: Some(v),
+                                })
+                                .collect(),
+                        }))
                     } else {
                         Err(errors)
                     }
+                } else {
+                    Err(vec!["Unexpected inner type for List.".to_string()])
+                }
+            }
+            _ => Err(vec!["Unexpected type; expected a List type.".to_string()]),
+        },
+
+        Value::Record(values) => match &typ.r#type {
+            Some(crate::protobuf::r#type::Type::Record(typ_record)) => {
+                if values.len() != typ_record.fields.len() {
+                    return Err(vec!["The total number of field values is zero".to_string()]);
                 }
 
-                _ => Err(vec!["Unexpected type; expected a list type.".to_string()]),
-            },
+                let mut errors = vec![];
+                let mut results = vec![];
 
-            Value::Record(values) => match analysed_type {
-                AnalysedType::Record(fields) => {
-                    if values.len() != fields.len() {
-                        return Err(vec!["The total number of field values is zero".to_string()]);
-                    }
-
-                    let mut errors = vec![];
-                    let mut results: Vec<(String, TypeAnnotatedValue)> = vec![];
-
-                    for (value, (field_name, typ)) in values.iter().zip(fields) {
-                        match TypeAnnotatedValue::from_value(value, typ) {
-                            Ok(res) => {
-                                results.push((field_name.clone(), res));
-                            }
+                for (value, field) in values.iter().zip(&typ_record.fields) {
+                    if let Some(field_type) = &field.typ {
+                        match create_from_type(value, field_type) {
+                            Ok(res) => results.push((field.name.clone(), res)),
                             Err(errs) => errors.extend(errs),
                         }
-                    }
-
-                    if errors.is_empty() {
-                        Ok(TypeAnnotatedValue::Record {
-                            typ: fields.clone(),
-                            value: results,
-                        })
                     } else {
-                        Err(errors)
+                        errors.push(format!("Missing type for field {}", field.name));
                     }
                 }
 
-                _ => Err(vec!["Unexpected type; expected a variant type.".to_string()]),
-            },
+                if errors.is_empty() {
+                    Ok(TypeAnnotatedValue::Record(TypedRecord {
+                        typ: typ_record.fields.clone(),
+                        value: results
+                            .into_iter()
+                            .map(|(name, value)| NameValuePair {
+                                name,
+                                value: Some(RootTypeAnnotatedValue {
+                                    type_annotated_value: Some(value),
+                                }),
+                            })
+                            .collect(),
+                    }))
+                } else {
+                    Err(errors)
+                }
+            }
+            _ => Err(vec!["Unexpected type; expected a Record type.".to_string()]),
+        },
 
-            Value::Variant {
-                case_idx,
-                case_value,
-            } => match analysed_type {
-                AnalysedType::Variant(cases) => {
-                    if (*case_idx as usize) < cases.len() {
-                        let (case_name, case_type) = match cases.get(*case_idx as usize) {
-                            Some(tpe) => Ok(tpe),
-                            None => {
-                                Err(vec!["Variant not found in the expected types.".to_string()])
+        Value::Variant {
+            case_idx,
+            case_value,
+        } => match &typ.r#type {
+            Some(crate::protobuf::r#type::Type::Variant(typ_variant)) => {
+                if (*case_idx as usize) < typ_variant.cases.len() {
+                    let cases = typ_variant.cases.clone();
+
+                    let (case_name, case_tpe) = match cases.get(*case_idx as usize) {
+                        Some(tpe) => Ok((tpe.name.clone(), tpe.typ.clone())),
+                        None => Err(vec!["Variant not found in the expected types.".to_string()]),
+                    }?;
+
+                    match case_tpe {
+                        Some(tpe) => match case_value {
+                            Some(case_value) => {
+                                let result = create_from_type(case_value, &tpe)?;
+
+                                Ok(TypeAnnotatedValue::Variant(Box::new(TypedVariant {
+                                    typ: Some(crate::protobuf::TypeVariant { cases }),
+                                    case_name: case_name.clone(),
+                                    case_value: Some(Box::new(RootTypeAnnotatedValue {
+                                        type_annotated_value: Some(result),
+                                    })),
+                                })))
                             }
-                        }?;
+                            None => Err(vec![format!("Missing value for case {case_name}")]),
+                        },
+                        None => Ok(TypeAnnotatedValue::Variant(Box::new(TypedVariant {
+                            typ: Some(crate::protobuf::TypeVariant { cases }),
+                            case_name: case_name.clone(),
+                            case_value: None,
+                        }))),
+                    }
+                } else {
+                    Err(vec![
+                        "Invalid discriminant value for the variant.".to_string()
+                    ])
+                }
+            }
+            _ => Err(vec!["Unexpected type; expected a Variant type.".to_string()]),
+        },
 
-                        match case_type {
-                            Some(tpe) => match case_value {
-                                Some(case_value) => {
-                                    let result = Self::from_value(case_value, tpe)?;
-                                    Ok(TypeAnnotatedValue::Variant {
-                                        typ: cases.clone(),
-                                        case_name: case_name.clone(),
-                                        case_value: Some(Box::new(result)),
-                                    })
-                                }
-                                None => Err(vec![format!("Missing value for case {case_name}")]),
+        Value::Flags(values) => match &typ.r#type {
+            Some(crate::protobuf::r#type::Type::Flags(typ_flags)) => {
+                if values.len() != typ_flags.names.len() {
+                    return Err(vec![format!(
+                        "Unexpected number of flag states: {:?} vs {:?}",
+                        values.len(),
+                        typ_flags.names.len()
+                    )]);
+                }
+
+                let enabled_flags: Vec<String> = values
+                    .iter()
+                    .zip(typ_flags.names.iter())
+                    .filter_map(|(enabled, name)| if *enabled { Some(name.clone()) } else { None })
+                    .collect();
+
+                Ok(TypeAnnotatedValue::Flags(TypedFlags {
+                    typ: typ_flags.names.clone(),
+                    values: enabled_flags,
+                }))
+            }
+            _ => Err(vec!["Unexpected type; expected a Flags type.".to_string()]),
+        },
+
+        Value::Result(value) => match &typ.r#type {
+            Some(crate::protobuf::r#type::Type::Result(typ_result)) => {
+                match (value, &typ_result.ok, &typ_result.err) {
+                    (Ok(Some(value)), Some(ok_type), _) => {
+                        let result = create_from_type(value, ok_type)?;
+
+                        Ok(TypeAnnotatedValue::Result(Box::new(TypedResult {
+                            ok: Some(ok_type.as_ref().clone()),
+                            error: typ_result.err.clone().map(|t| (*t).clone()),
+                            result_value: Some(ResultValue::OkValue(Box::new(
+                                RootTypeAnnotatedValue {
+                                    type_annotated_value: Some(result),
+                                },
+                            ))),
+                        })))
+                    }
+                    (Ok(None), Some(_), _) => {
+                        Err(vec!["Non-unit ok result has no value".to_string()])
+                    }
+
+                    (Ok(None), None, _) => Ok(TypeAnnotatedValue::Result(Box::new(TypedResult {
+                        ok: typ_result.ok.clone().map(|t| (*t).clone()),
+                        error: typ_result.err.clone().map(|t| (*t).clone()),
+                        result_value: Some(ResultValue::OkValue(Box::new(
+                            RootTypeAnnotatedValue {
+                                type_annotated_value: None,
                             },
-                            None => Ok(TypeAnnotatedValue::Variant {
-                                typ: cases.clone(),
-                                case_name: case_name.clone(),
-                                case_value: None,
-                            }),
-                        }
-                    } else {
-                        Err(vec![
-                            "Invalid discriminant value for the variant.".to_string()
-                        ])
+                        ))),
+                    }))),
+
+                    (Ok(Some(_)), None, _) => Err(vec!["Unit ok result has a value".to_string()]),
+
+                    (Err(Some(value)), _, Some(err_type)) => {
+                        let result = create_from_type(value, err_type)?;
+
+                        Ok(TypeAnnotatedValue::Result(Box::new(TypedResult {
+                            ok: typ_result.ok.clone().map(|t| (*t).clone()),
+                            error: typ_result.err.clone().map(|t| (*t).clone()),
+                            result_value: Some(ResultValue::ErrorValue(Box::new(
+                                RootTypeAnnotatedValue {
+                                    type_annotated_value: Some(result),
+                                },
+                            ))),
+                        })))
+                    }
+
+                    (Err(None), _, Some(_)) => {
+                        Err(vec!["Non-unit error result has no value".to_string()])
+                    }
+
+                    (Err(None), _, None) => Ok(TypeAnnotatedValue::Result(Box::new(TypedResult {
+                        ok: typ_result.ok.clone().map(|t| (*t).clone()),
+                        error: typ_result.err.clone().map(|t| (*t).clone()),
+                        result_value: Some(ResultValue::ErrorValue(Box::new(
+                            RootTypeAnnotatedValue {
+                                type_annotated_value: None,
+                            },
+                        ))),
+                    }))),
+
+                    (Err(Some(_)), _, None) => {
+                        Err(vec!["Unit error result has a value".to_string()])
                     }
                 }
+            }
 
-                _ => Err(vec!["Unexpected type; expected a variant type.".to_string()]),
-            },
+            _ => Err(vec!["Unexpected type; expected a Result type.".to_string()]),
+        },
 
-            Value::Flags(values) => match analysed_type {
-                AnalysedType::Flags(names) => {
-                    let mut results = vec![];
-
-                    if values.len() != names.len() {
-                        Err(vec![format!(
-                            "Unexpected number of flag states: {:?} vs {:?}",
-                            values, names
-                        )])
-                    } else {
-                        for (enabled, name) in values.iter().zip(names) {
-                            if *enabled {
-                                results.push(name.clone());
-                            }
-                        }
-
-                        Ok(TypeAnnotatedValue::Flags {
-                            typ: names.clone(),
-                            values: results,
-                        })
-                    }
-                }
-                _ => Err(vec!["Unexpected type; expected a flags type.".to_string()]),
-            },
-
-            Value::Result(value) => match analysed_type {
-                golem_wasm_ast::analysis::AnalysedType::Result { ok, error } => {
-                    match (value, ok, error) {
-                        (Ok(Some(value)), Some(ok_type), _) => {
-                            let result = Self::from_value(value, ok_type)?;
-
-                            Ok(TypeAnnotatedValue::Result {
-                                value: Ok(Some(Box::new(result))),
-                                ok: ok.clone(),
-                                error: error.clone(),
-                            })
-                        }
-
-                        (Ok(None), Some(_), _) => {
-                            Err(vec!["Non-unit ok result has no value".to_string()])
-                        }
-
-                        (Ok(None), None, _) => Ok(TypeAnnotatedValue::Result {
-                            value: Ok(None),
-                            ok: ok.clone(),
-                            error: error.clone(),
-                        }),
-
-                        (Ok(Some(_)), None, _) => {
-                            Err(vec!["Unit ok result has a value".to_string()])
-                        }
-
-                        (Err(Some(value)), _, Some(err_type)) => {
-                            let result = Self::from_value(value, err_type)?;
-
-                            Ok(TypeAnnotatedValue::Result {
-                                value: Err(Some(Box::new(result))),
-                                ok: ok.clone(),
-                                error: error.clone(),
-                            })
-                        }
-
-                        (Err(None), _, Some(_)) => {
-                            Err(vec!["Non-unit error result has no value".to_string()])
-                        }
-
-                        (Err(None), _, None) => Ok(TypeAnnotatedValue::Result {
-                            value: Err(None),
-                            ok: ok.clone(),
-                            error: error.clone(),
-                        }),
-
-                        (Err(Some(_)), _, None) => {
-                            Err(vec!["Unit error result has a value".to_string()])
-                        }
-                    }
-                }
-
-                _ => Err(vec!["Unexpected type; expected a Result type.".to_string()]),
-            },
-            Value::Handle { uri, resource_id } => match analysed_type {
-                AnalysedType::Resource { id, resource_mode } => Ok(TypeAnnotatedValue::Handle {
-                    id: id.clone(),
-                    resource_mode: resource_mode.clone(),
-                    uri: uri.clone(),
+        Value::Handle { uri, resource_id } => match &typ.r#type {
+            Some(crate::protobuf::r#type::Type::Handle(typ_handle)) => {
+                let handle = TypedHandle {
+                    uri: uri.value.clone(),
                     resource_id: *resource_id,
-                }),
-                _ => Err(vec!["Unexpected type; expected a Handle type.".to_string()]),
-            },
+                    typ: Some(typ_handle.clone()),
+                };
+                Ok(TypeAnnotatedValue::Handle(handle))
+            }
+            _ => Err(vec![
+                "Unexpected type; expected a Resource type.".to_string()
+            ]),
+        },
+    }
+}
+
+pub fn get_analysed_type(value: &TypeAnnotatedValue) -> Result<AnalysedType, String> {
+    let raw_type = get_type(value)?;
+    AnalysedType::from_type(&raw_type)
+}
+
+pub fn get_type(value: &TypeAnnotatedValue) -> Result<Type, String> {
+    let r#type = match value {
+        TypeAnnotatedValue::Bool(_) => Ok(r#type::Type::Primitive(TypePrimitive {
+            primitive: PrimitiveType::Bool as i32,
+        })),
+        TypeAnnotatedValue::S8(_) => Ok(r#type::Type::Primitive(TypePrimitive {
+            primitive: PrimitiveType::S8 as i32,
+        })),
+        TypeAnnotatedValue::U8(_) => Ok(r#type::Type::Primitive(TypePrimitive {
+            primitive: PrimitiveType::U8 as i32,
+        })),
+        TypeAnnotatedValue::S16(_) => Ok(r#type::Type::Primitive(TypePrimitive {
+            primitive: PrimitiveType::S16 as i32,
+        })),
+        TypeAnnotatedValue::U16(_) => Ok(r#type::Type::Primitive(TypePrimitive {
+            primitive: PrimitiveType::U16 as i32,
+        })),
+        TypeAnnotatedValue::S32(_) => Ok(r#type::Type::Primitive(TypePrimitive {
+            primitive: PrimitiveType::S32 as i32,
+        })),
+        TypeAnnotatedValue::U32(_) => Ok(r#type::Type::Primitive(TypePrimitive {
+            primitive: PrimitiveType::U32 as i32,
+        })),
+        TypeAnnotatedValue::S64(_) => Ok(r#type::Type::Primitive(TypePrimitive {
+            primitive: PrimitiveType::S64 as i32,
+        })),
+        TypeAnnotatedValue::U64(_) => Ok(r#type::Type::Primitive(TypePrimitive {
+            primitive: PrimitiveType::U64 as i32,
+        })),
+        TypeAnnotatedValue::F32(_) => Ok(r#type::Type::Primitive(TypePrimitive {
+            primitive: PrimitiveType::F32 as i32,
+        })),
+        TypeAnnotatedValue::F64(_) => Ok(r#type::Type::Primitive(TypePrimitive {
+            primitive: PrimitiveType::F64 as i32,
+        })),
+        TypeAnnotatedValue::Char(_) => Ok(r#type::Type::Primitive(TypePrimitive {
+            primitive: PrimitiveType::Chr as i32,
+        })),
+        TypeAnnotatedValue::Str(_) => Ok(r#type::Type::Primitive(TypePrimitive {
+            primitive: PrimitiveType::Str as i32,
+        })),
+        TypeAnnotatedValue::List(TypedList { typ, values: _ }) => {
+            if let Some(typ) = typ.clone() {
+                Ok(r#type::Type::List(Box::new(TypeList {
+                    elem: Some(Box::new(typ)),
+                })))
+            } else {
+                Err("Missing type for List".to_string())
+            }
         }
-    }
-}
-
-impl From<&TypeAnnotatedValue> for AnalysedType {
-    fn from(value: &TypeAnnotatedValue) -> Self {
-        match value {
-            TypeAnnotatedValue::Bool(_) => AnalysedType::Bool,
-            TypeAnnotatedValue::S8(_) => AnalysedType::S8,
-            TypeAnnotatedValue::U8(_) => AnalysedType::U8,
-            TypeAnnotatedValue::S16(_) => AnalysedType::S16,
-            TypeAnnotatedValue::U16(_) => AnalysedType::U16,
-            TypeAnnotatedValue::S32(_) => AnalysedType::S32,
-            TypeAnnotatedValue::U32(_) => AnalysedType::U32,
-            TypeAnnotatedValue::S64(_) => AnalysedType::S64,
-            TypeAnnotatedValue::U64(_) => AnalysedType::U64,
-            TypeAnnotatedValue::F32(_) => AnalysedType::F32,
-            TypeAnnotatedValue::F64(_) => AnalysedType::F64,
-            TypeAnnotatedValue::Chr(_) => AnalysedType::Chr,
-            TypeAnnotatedValue::Str(_) => AnalysedType::Str,
-            TypeAnnotatedValue::List { typ, values: _ } => {
-                AnalysedType::List(Box::new(typ.clone()))
-            }
-            TypeAnnotatedValue::Tuple { typ, value: _ } => AnalysedType::Tuple(typ.clone()),
-            TypeAnnotatedValue::Record { typ, value: _ } => AnalysedType::Record(typ.clone()),
-            TypeAnnotatedValue::Flags { typ, values: _ } => AnalysedType::Flags(typ.clone()),
-            TypeAnnotatedValue::Enum { typ, value: _ } => AnalysedType::Enum(typ.clone()),
-            TypeAnnotatedValue::Option { typ, value: _ } => {
-                AnalysedType::Option(Box::new(typ.clone()))
-            }
-            TypeAnnotatedValue::Result {
-                ok,
-                error,
-                value: _,
-            } => AnalysedType::Result {
-                ok: ok.clone(),
-                error: error.clone(),
-            },
-            TypeAnnotatedValue::Handle {
-                id,
-                resource_mode,
-                uri: _,
-                resource_id: _,
-            } => AnalysedType::Resource {
-                id: id.clone(),
-                resource_mode: resource_mode.clone(),
-            },
-            TypeAnnotatedValue::Variant {
-                typ,
-                case_name: _,
-                case_value: _,
-            } => AnalysedType::Variant(typ.clone()),
+        TypeAnnotatedValue::Tuple(TypedTuple { typ, value: _ }) => {
+            Ok(r#type::Type::Tuple(TypeTuple { elems: typ.clone() }))
         }
-    }
+        TypeAnnotatedValue::Record(TypedRecord { typ, value: _ }) => {
+            Ok(r#type::Type::Record(TypeRecord {
+                fields: typ.clone(),
+            }))
+        }
+        TypeAnnotatedValue::Flags(TypedFlags { typ, values: _ }) => {
+            Ok(r#type::Type::Flags(TypeFlags { names: typ.clone() }))
+        }
+        TypeAnnotatedValue::Enum(TypedEnum { typ, value: _ }) => {
+            Ok(r#type::Type::Enum(TypeEnum { names: typ.clone() }))
+        }
+        TypeAnnotatedValue::Option(option) => {
+            let typ = option.typ.clone();
+            Ok(r#type::Type::Option(Box::new(TypeOption {
+                elem: typ.map(Box::new),
+            })))
+        }
+        TypeAnnotatedValue::Result(result0) => Ok(r#type::Type::Result(Box::new(TypeResult {
+            ok: result0.ok.clone().map(Box::new),
+            err: result0.error.clone().map(Box::new),
+        }))),
+        TypeAnnotatedValue::Handle(TypedHandle { typ, .. }) => {
+            if let Some(typ) = typ.clone() {
+                Ok(r#type::Type::Handle(typ))
+            } else {
+                Err("Missing type for Handle".to_string())
+            }
+        }
+        TypeAnnotatedValue::Variant(variant) => {
+            if let Some(typ) = variant.clone().typ {
+                Ok(r#type::Type::Variant(typ))
+            } else {
+                Err("Missing type for Variant".to_string())
+            }
+        }
+    };
+
+    r#type.map(|r#type| Type {
+        r#type: Some(r#type),
+    })
 }
-impl TryFrom<TypeAnnotatedValue> for WitValue {
-    type Error = String;
-    fn try_from(value: TypeAnnotatedValue) -> Result<Self, Self::Error> {
-        let value: Result<Value, String> = value.try_into();
-        value.map(|v| v.into())
-    }
-}
 
-impl TryFrom<TypeAnnotatedValue> for Value {
-    type Error = String;
+pub fn get_value(value: TypeAnnotatedValue) -> Result<Value, String> {
+    match value {
+        TypeAnnotatedValue::Bool(value) => Ok(Value::Bool(value)),
+        TypeAnnotatedValue::S8(value) => Ok(Value::S8(value as i8)),
+        TypeAnnotatedValue::U8(value) => Ok(Value::U8(value as u8)),
+        TypeAnnotatedValue::S16(value) => Ok(Value::S16(value as i16)),
+        TypeAnnotatedValue::U16(value) => Ok(Value::U16(value as u16)),
+        TypeAnnotatedValue::S32(value) => Ok(Value::S32(value)),
+        TypeAnnotatedValue::U32(value) => Ok(Value::U32(value)),
+        TypeAnnotatedValue::S64(value) => Ok(Value::S64(value)),
+        TypeAnnotatedValue::U64(value) => Ok(Value::U64(value)),
+        TypeAnnotatedValue::F32(value) => Ok(Value::F32(value)),
+        TypeAnnotatedValue::F64(value) => Ok(Value::F64(value)),
+        TypeAnnotatedValue::Char(value) => char::from_u32(value as u32)
+            .map(Value::Char)
+            .ok_or_else(|| "Invalid char value".to_string()),
+        TypeAnnotatedValue::Str(value) => Ok(Value::String(value)),
+        TypeAnnotatedValue::List(TypedList { typ: _, values }) => {
+            let mut list_values = Vec::new();
+            for value in values {
+                let type_annotated_value = value
+                    .type_annotated_value
+                    .ok_or_else(|| "Missing type_annotated_value in List".to_string())?;
+                list_values.push(get_value(type_annotated_value)?);
+            }
+            Ok(Value::List(list_values))
+        }
+        TypeAnnotatedValue::Tuple(TypedTuple { typ: _, value }) => {
+            let mut tuple_values = Vec::new();
+            for value in value {
+                let type_annotated_value = value
+                    .type_annotated_value
+                    .ok_or_else(|| "Missing type_annotated_value in Tuple".to_string())?;
+                tuple_values.push(get_value(type_annotated_value)?);
+            }
+            Ok(Value::Tuple(tuple_values))
+        }
+        TypeAnnotatedValue::Record(TypedRecord { typ: _, value }) => {
+            let mut record_values = Vec::new();
+            for name_value in value {
+                let type_annotated_value = name_value
+                    .value
+                    .ok_or_else(|| "Missing value in Record".to_string())?
+                    .type_annotated_value
+                    .ok_or_else(|| "Missing type_annotated_value in Record".to_string())?;
+                record_values.push(get_value(type_annotated_value)?);
+            }
+            Ok(Value::Record(record_values))
+        }
+        TypeAnnotatedValue::Flags(TypedFlags { typ, values }) => {
+            let mut bools = Vec::new();
+            for expected_flag in typ {
+                bools.push(values.contains(&expected_flag));
+            }
+            Ok(Value::Flags(bools))
+        }
+        TypeAnnotatedValue::Enum(TypedEnum { typ, value }) => typ
+            .iter()
+            .position(|expected_enum| expected_enum == &value)
+            .map(|index| Value::Enum(index as u32))
+            .ok_or_else(|| "Enum value not found in the list of expected enums".to_string()),
+        TypeAnnotatedValue::Option(option) => match option.value {
+            Some(value) => {
+                let type_annotated_value = value
+                    .type_annotated_value
+                    .ok_or_else(|| "Missing type_annotated_value in Option".to_string())?;
+                let value = get_value(type_annotated_value)?;
+                Ok(Value::Option(Some(Box::new(value))))
+            }
+            None => Ok(Value::Option(None)),
+        },
+        TypeAnnotatedValue::Result(result) => {
+            let value = result
+                .result_value
+                .ok_or_else(|| "Missing value in Result".to_string())?;
 
-    fn try_from(value: TypeAnnotatedValue) -> Result<Self, Self::Error> {
-        match value {
-            TypeAnnotatedValue::Bool(value) => Ok(Value::Bool(value)),
-            TypeAnnotatedValue::S8(value) => Ok(Value::S8(value)),
-            TypeAnnotatedValue::U8(value) => Ok(Value::U8(value)),
-            TypeAnnotatedValue::S16(value) => Ok(Value::S16(value)),
-            TypeAnnotatedValue::U16(value) => Ok(Value::U16(value)),
-            TypeAnnotatedValue::S32(value) => Ok(Value::S32(value)),
-            TypeAnnotatedValue::U32(value) => Ok(Value::U32(value)),
-            TypeAnnotatedValue::S64(value) => Ok(Value::S64(value)),
-            TypeAnnotatedValue::U64(value) => Ok(Value::U64(value)),
-            TypeAnnotatedValue::F32(value) => Ok(Value::F32(value)),
-            TypeAnnotatedValue::F64(value) => Ok(Value::F64(value)),
-            TypeAnnotatedValue::Chr(value) => Ok(Value::Char(value)),
-            TypeAnnotatedValue::Str(value) => Ok(Value::String(value)),
-            TypeAnnotatedValue::List { typ: _, values } => {
-                let mut list_values = Vec::new();
-                for value in values {
-                    match value.try_into() {
-                        Ok(v) => list_values.push(v),
-                        Err(err) => return Err(err),
-                    }
+            match value {
+                ResultValue::OkValue(ok_value) => {
+                    let type_annotated_value = ok_value
+                        .type_annotated_value
+                        .ok_or_else(|| "Missing type_annotated_value in Result Ok".to_string())?;
+                    let value = get_value(type_annotated_value)?;
+                    Ok(Value::Result(Ok(Some(Box::new(value)))))
                 }
-                Ok(Value::List(list_values))
-            }
-            TypeAnnotatedValue::Tuple { typ: _, value } => {
-                let mut tuple_values = Vec::new();
-                for value in value {
-                    match value.try_into() {
-                        Ok(v) => tuple_values.push(v),
-                        Err(err) => return Err(err),
-                    }
-                }
-                Ok(Value::Tuple(tuple_values))
-            }
-            TypeAnnotatedValue::Record { typ: _, value } => {
-                let mut record_values = Vec::new();
-                for (_, value) in value {
-                    match value.try_into() {
-                        Ok(v) => record_values.push(v),
-                        Err(err) => return Err(err),
-                    }
-                }
-                Ok(Value::Record(record_values))
-            }
-            TypeAnnotatedValue::Flags { typ, values } => {
-                let mut bools = Vec::new();
 
-                for expected_flag in typ {
-                    if values.contains(&expected_flag) {
-                        bools.push(true);
-                    } else {
-                        bools.push(false);
-                    }
+                ResultValue::ErrorValue(err_value) => {
+                    let type_annotated_value = err_value
+                        .type_annotated_value
+                        .ok_or_else(|| "Missing type_annotated_value in Result Err".to_string())?;
+                    let value = get_value(type_annotated_value)?;
+                    Ok(Value::Result(Err(Some(Box::new(value)))))
                 }
-                Ok(Value::Flags(bools))
             }
-            TypeAnnotatedValue::Enum { typ, value } => typ
+        }
+        TypeAnnotatedValue::Handle(handle) => Ok(Value::Handle {
+            uri: Uri { value: handle.uri },
+            resource_id: handle.resource_id,
+        }),
+        TypeAnnotatedValue::Variant(variant) => {
+            let case_value = variant.case_value;
+            let case_name = variant.case_name;
+            let typ = variant
+                .typ
+                .ok_or_else(|| "Missing typ in Variant".to_string())?
+                .cases
                 .iter()
-                .position(|expected_enum| expected_enum == &value)
-                .map(|index| Value::Enum(index as u32))
-                .ok_or_else(|| "Enum value not found in the list of expected enums".to_string()),
+                .map(|nt| (nt.name.clone(), nt.typ.clone()))
+                .collect::<Vec<_>>();
 
-            TypeAnnotatedValue::Option { typ: _, value } => match value {
+            let case_idx = typ
+                .iter()
+                .position(|(name, _)| name == &case_name)
+                .ok_or_else(|| "Case name not found in Variant".to_string())?
+                as u32;
+
+            match case_value {
                 Some(value) => {
-                    let value: Value = value.deref().clone().try_into()?;
-                    Ok(Value::Option(Some(Box::new(value))))
-                }
-                None => Ok(Value::Option(None)),
-            },
-            TypeAnnotatedValue::Result {
-                ok: _,
-                error: _,
-                value,
-            } => Ok(Value::Result(match value {
-                Ok(value) => match value {
-                    Some(v) => {
-                        let value: Value = v.deref().clone().try_into()?;
-                        Ok(Some(Box::new(value)))
-                    }
-
-                    None => Ok(None),
-                },
-                Err(value) => match value {
-                    Some(v) => {
-                        let value: Value = v.deref().clone().try_into()?;
-                        Err(Some(Box::new(value)))
-                    }
-
-                    None => Err(None),
-                },
-            })),
-            TypeAnnotatedValue::Handle {
-                id: _,
-                resource_mode: _,
-                uri,
-                resource_id,
-            } => Ok(Value::Handle { uri, resource_id }),
-            TypeAnnotatedValue::Variant {
-                typ,
-                case_name,
-                case_value,
-            } => match case_value {
-                Some(value) => {
-                    let result: Value = value.deref().clone().try_into()?;
+                    let type_annotated_value = value
+                        .type_annotated_value
+                        .ok_or_else(|| "Missing type_annotated_value in Variant".to_string())?;
+                    let result = get_value(type_annotated_value)?;
                     Ok(Value::Variant {
-                        case_idx: typ.iter().position(|(name, _)| name == &case_name).unwrap()
-                            as u32,
+                        case_idx,
                         case_value: Some(Box::new(result)),
                     })
                 }
                 None => Ok(Value::Variant {
-                    case_idx: typ.iter().position(|(name, _)| name == &case_name).unwrap() as u32,
+                    case_idx,
                     case_value: None,
                 }),
-            },
+            }
         }
     }
+}
+
+pub fn get_wit_value(value: TypeAnnotatedValue) -> Result<WitValue, String> {
+    let value: Result<Value, String> = get_value(value);
+    value.map(|v| v.into())
 }

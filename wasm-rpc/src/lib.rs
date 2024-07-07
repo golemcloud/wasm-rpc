@@ -45,6 +45,9 @@ mod text;
 #[cfg(feature = "typeinfo")]
 mod type_annotated_value;
 
+#[cfg(feature = "typeinfo")]
+mod type_ext;
+
 #[cfg(feature = "wasmtime")]
 pub mod wasmtime;
 
@@ -114,6 +117,12 @@ impl wasmtime_wasi::Subscribe for FutureInvokeResultEntry {
 
 #[cfg(feature = "typeinfo")]
 pub use type_annotated_value::*;
+
+#[cfg(feature = "typeinfo")]
+pub use type_ext::*;
+
+#[cfg(feature = "text")]
+pub use text::{type_annotated_value_from_str, type_annotated_value_to_string};
 
 #[cfg(feature = "arbitrary")]
 impl<'a> arbitrary::Arbitrary<'a> for Uri {
