@@ -2,6 +2,7 @@ use golem_wasm_ast::analysis::AnalysedType;
 
 use crate::{Uri, Value, WitValue};
 
+use crate::protobuf::type_annotated_value::TypeAnnotatedValue;
 use crate::protobuf::typed_result::ResultValue;
 use crate::protobuf::{
     r#type, PrimitiveType, Type, TypeEnum, TypeFlags, TypeList, TypeOption, TypePrimitive,
@@ -11,8 +12,6 @@ use crate::protobuf::{
 use crate::protobuf::{NameValuePair, TypedOption};
 use crate::protobuf::{TypeAnnotatedValue as RootTypeAnnotatedValue, TypedResult};
 use crate::type_ext::TypeExt;
-
-pub type TypeAnnotatedValue = crate::protobuf::type_annotated_value::TypeAnnotatedValue;
 
 // To create TypeAnnotatedValue, we need the type-info represented in any forms,
 // as far as it can be converted to `golem_wasm_rpc::protobuf::Type`
