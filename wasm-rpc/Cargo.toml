@@ -26,7 +26,7 @@ golem-wasm-ast = { version = "0.3.0", features = [
 ], optional = true }
 serde = { version = "1.0.203", optional = true }
 serde_json = { version = "1.0.117", optional = true }
-prost = { version = "0.12.6", optional = true }
+prost = { version = "0.13.1", optional = true }
 wasmtime = { version = "=21.0.1", features = [
     "component-model",
 ], optional = true }
