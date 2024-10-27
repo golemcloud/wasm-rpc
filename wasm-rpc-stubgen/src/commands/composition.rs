@@ -97,12 +97,12 @@ fn plug(
 
     let unused_plugs = {
         for (plug_export_name, _) in graph.get_instantiation_arguments(socket_instantiation) {
-            plug_exports_to_plug
-                .remove(plug_export_name)
-                .iter()
-                .for_each(|plug_name| {
-                    requested_plugs.remove(plug_name);
-                });
+            // plug_exports_to_plug
+            //     .remove(plug_export_name)
+            //     .iter()
+            //     .for_each(|plug_name| {
+            //         requested_plugs.remove(plug_name);
+            //     });
         }
         requested_plugs
     };
