@@ -95,21 +95,21 @@ fn plug(
         }
     }
 
-    let unused_plugs = {
-        for (plug_export_name, _) in graph.get_instantiation_arguments(socket_instantiation) {
-            // plug_exports_to_plug
-            //     .remove(plug_export_name)
-            //     .iter()
-            //     .for_each(|plug_name| {
-            //         requested_plugs.remove(plug_name);
-            //     });
-        }
-        requested_plugs
-    };
+    // let unused_plugs = {
+    //     for (plug_export_name, _) in graph.get_instantiation_arguments(socket_instantiation) {
+    //         // plug_exports_to_plug
+    //         //     .remove(plug_export_name)
+    //         //     .iter()
+    //         //     .for_each(|plug_name| {
+    //         //         requested_plugs.remove(plug_name);
+    //         //     });
+    //     }
+    //     requested_plugs
+    // };
 
-    for plug_name in unused_plugs {
-        log_warn_action("Skipping", format!("{}, not used", plug_name));
-    }
+    // for plug_name in unused_plugs {
+    //     log_warn_action("Skipping", format!("{}, not used", plug_name));
+    // }
 
     // Export all exports from the socket component.
     for name in graph.types()[graph[socket].ty()]
