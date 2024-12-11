@@ -1,3 +1,5 @@
+**MERGED TO THE https://github.com/golemcloud/golem/ REPOSITORY**
+
 # wasm-rpc
 
 ## golem-wasm-rpc
